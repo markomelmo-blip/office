@@ -90,7 +90,9 @@ function spawnFood() {
 }
 
 function draw() {
-  image(bg, width / 2, height / 2, width, height);
+  imageMode(CORNER);
+image(bg, 0, 0);
+imageMode(CENTER);
 
   if (!gameStarted) {
     idleJump();
