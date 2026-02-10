@@ -14,11 +14,11 @@ let youWin = false;
 let gameStarted = false;
 
 let activeTasksPerTarget = new Map();
+let draggedCharacter = null;
 
 /* ===== PRELOAD ===== */
 function preload() {
   bg = loadImage('images/background.png');
-
   mainImg = loadImage('images/main.png');
 
   for (let i = 1; i <= 5; i++) {
@@ -49,12 +49,10 @@ function setup() {
     });
   }
 
-  // ⬅️ переміщення character_2 та character_3
-  npcPositions[1].x += 40; // character_2 правіше
-  npcPositions[1].y -= 20; // character_2 трохи вгору
-  npcPositions[2].x -= 20; // character_3 трохи лівіше
+  npcPositions[1].x += 70;
+  npcPositions[1].y -= 20;
+  npcPositions[2].x -= 50;
 
-  // swap main і character_4
   let swapIndex = 3;
   let mainOldPos = { x: width / 2, y: height - 120 };
 
@@ -64,13 +62,13 @@ function setup() {
     mainImg,
     true
   );
-  mainCharacter.jumpHint = true; // підстрибування перед стартом
+  mainCharacter.jumpHint = true;
 
   for (let i = 0; i < characterImgs.length; i++) {
     let pos = npcPositions[i];
     if (i === swapIndex) pos = mainOldPos;
 
-    let c = new Character(pos.x, pos.y, characterImgs[i], false);
+    let c = new Character(pos.x, pos.y, characterImgs[i], false, i === 3);
     characters.push(c);
     activeTasksPerTarget.set(c, 0);
   }
@@ -102,7 +100,53 @@ function draw() {
   }
 }
 
-/* ===== TASK SPAWN ===== */
+/* ===== INPUT ===== */
+function mousePressed() {
+  if (!gameStarted) {
+    // старт гри
+    if (
+      dist(mouseX, mouseY, mainCharacter.pos.x, mainCharacter.pos.y) < 40
+    ) {
+      gameStarted = true;
+      mainCharacter.jumpHint = false;
+      return;
+    }
+
+    // початок перетягування NPC
+    for (let c of characters) {
+      if (
+        c.alive &&
+        dist(mouseX, mouseY, c.pos.x, c.pos.y) < 40
+      ) {
+        draggedCharacter = c;
+        break;
+      }
+    }
+  }
+
+  // кліки по тасках уже під час гри
+  if (gameStarted) {
+    for (let t of tasks) {
+      if (!t.clicked && t.isClicked(mouseX, mouseY)) {
+        t.clicked = true;
+        break;
+      }
+    }
+  }
+}
+
+function mouseDragged() {
+  if (!gameStarted && draggedCharacter) {
+    draggedCharacter.pos.x = mouseX;
+    draggedCharacter.pos.y = mouseY;
+  }
+}
+
+function mouseReleased() {
+  draggedCharacter = null;
+}
+
+/* ===== GAME LOGIC ===== */
 function handleSpawning() {
   if (spawnedTasks >= TOTAL_TASKS) return;
   if (frameCount % 50 !== 0) return;
@@ -115,17 +159,18 @@ function handleSpawning() {
 
   let target = random(available);
 
-  tasks.push(new Task(
-    mainCharacter.pos.x,
-    mainCharacter.pos.y - 60,
-    target
-  ));
+  tasks.push(
+    new Task(
+      mainCharacter.pos.x,
+      mainCharacter.pos.y - 60,
+      target
+    )
+  );
 
   activeTasksPerTarget.set(target, 1);
   spawnedTasks++;
 }
 
-/* ===== TASK UPDATE ===== */
 function updateTasks() {
   for (let i = tasks.length - 1; i >= 0; i--) {
     let t = tasks[i];
@@ -148,25 +193,7 @@ function updateTasks() {
   }
 }
 
-/* ===== INPUT ===== */
-function mousePressed() {
-  if (!gameStarted) {
-    if (dist(mouseX, mouseY, mainCharacter.pos.x, mainCharacter.pos.y) < 30) {
-      gameStarted = true;
-      mainCharacter.jumpHint = false;
-      return;
-    }
-  }
-
-  for (let t of tasks) {
-    if (!t.clicked && t.isClicked(mouseX, mouseY)) {
-      t.clicked = true;
-      break;
-    }
-  }
-}
-
-/* ===== GAME STATE ===== */
+/* ===== END STATE ===== */
 function checkEndConditions() {
   if (!mainCharacter.alive) gameOver = true;
 
@@ -197,22 +224,24 @@ function drawProgress() {
 
 /* ===== CLASSES ===== */
 class Character {
-  constructor(x, y, img, isMain) {
+  constructor(x, y, img, isMain, isChar4 = false) {
     this.pos = createVector(x, y);
     this.img = img;
     this.isMain = isMain;
+    this.isChar4 = isChar4;
 
     this.maxHP = 3;
     this.hp = 3;
     this.alive = true;
 
-    this.displayWidth = 96;
+    this.baseWidth = 96;
+    this.scale = isChar4 ? 1.15 : 1;
     this.jumpHint = false;
   }
 
   update() {
     if (this.jumpHint) {
-      this.pos.y += sin(frameCount * 0.15) * 2; // підстрибування
+      this.pos.y += sin(frameCount * 0.15) * 2;
     }
   }
 
@@ -220,7 +249,8 @@ class Character {
     if (!this.alive) return;
 
     let ratio = this.img.height / this.img.width;
-    image(this.img, this.pos.x, this.pos.y, this.displayWidth, this.displayWidth * ratio);
+    let w = this.baseWidth * this.scale;
+    image(this.img, this.pos.x, this.pos.y, w, w * ratio);
   }
 
   drawHP() {
@@ -256,7 +286,7 @@ class Task {
     this.target = target;
 
     let dir = p5.Vector.sub(target.pos, this.pos).normalize();
-    this.velocity = dir.mult(2.4); // +0.2 швидше
+    this.velocity = dir.mult(2.6);
 
     this.size = 48;
     this.clicked = false;
@@ -267,9 +297,9 @@ class Task {
   }
 
   draw() {
-    let imgToDraw = this.clicked ? beetrootImg : taskImg;
-    let ratio = imgToDraw.height / imgToDraw.width;
-    image(imgToDraw, this.pos.x, this.pos.y, this.size, this.size * ratio);
+    let img = this.clicked ? beetrootImg : taskImg;
+    let ratio = img.height / img.width;
+    image(img, this.pos.x, this.pos.y, this.size, this.size * ratio);
   }
 
   hits(character) {
